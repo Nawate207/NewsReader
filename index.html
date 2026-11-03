@@ -4,10 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https://*.logic.azure.com; base-uri 'none'; form-action 'none'">
+        content="default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self'; connect-src https://*.logic.azure.com; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#ffffff">
   <meta name="robots" content="noindex, nofollow">
+  <meta name="apple-mobile-web-app-title" content="News">
   <title>RSS Reader</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <script src="theme-init.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -21,7 +27,7 @@
 
   <section id="settings" class="settings" hidden>
     <label for="endpoint">Logic Apps の HTTP URL（この端末のブラウザにのみ保存されます）</label>
-    <input id="endpoint" type="password" autocomplete="off" spellcheck="false"
+    <input id="endpoint" type="password"     autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
            placeholder="https://prod-xx.japaneast.logic.azure.com:443/workflows/...">
     <div class="row">
       <button id="saveBtn" type="button" class="primary">保存</button>
@@ -36,6 +42,11 @@
     </div>
     <ul id="cards" class="cards"></ul>
   </main>
+
+  <div class="fab-group">
+    <button id="viewBtn" type="button" class="fab" aria-label="表示切替"></button>
+    <button id="themeBtn" type="button" class="fab" aria-label="テーマ切替"></button>
+  </div>
 
   <script src="app.js"></script>
 </body>

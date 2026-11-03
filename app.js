@@ -3,6 +3,8 @@
 
   const KEY_URL = 'rss.endpoint';
   const KEY_CACHE = 'rss.cache';
+  const KEY_THEME = 'rss.theme';
+  const KEY_VIEW = 'rss.view';
   const TIMEOUT_MS = 60000;
   const MAX_BYTES = 5 * 1024 * 1024;
   const MAX_ITEMS = 300;
@@ -19,6 +21,8 @@
     cards: $('cards'),
     filter: $('filter'),
     filterRow: $('filterRow'),
+    themeBtn: $('themeBtn'),
+    viewBtn: $('viewBtn'),
   };
 
   let items = [];
@@ -31,7 +35,7 @@
   // Logic Apps の URL（https かつ *.logic.azure.com のみ許可）
   const parseEndpoint = (value) => {
     let u;
-    try { u = new URL(value.trim()); } catch { return null; }
+    try { u = new URL(value.replace(/\s+/g, '')); } catch { return null; }
     if (u.protocol !== 'https:' || !u.hostname.endsWith('.logic.azure.com')) return null;
     return u;
   };
@@ -148,17 +152,21 @@
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     try {
-      // カスタムヘッダー/Content-Type なしの単純リクエスト（CORSプリフライト不要）
+      // text/plain の単純リクエスト（プリフライト不要）。空ボディだと Safari で 400 になる場合があるため '{}' を送る
       const res = await fetch(u.href, {
         method: 'POST',
         mode: 'cors',
         credentials: 'omit',
         cache: 'no-store',
         referrerPolicy: 'no-referrer',
+        body: '{}',
         signal: ctrl.signal,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
+      if (!res.ok) {
+        const detail = text.replace(/\s+/g, ' ').slice(0, 200);
+        throw new Error(`HTTP ${res.status}${detail ? ' - ' + detail : ''}`);
+      }
       if (text.length > MAX_BYTES) throw new Error('レスポンスが大きすぎます');
       items = normalize(JSON.parse(text));
       localStorage.setItem(KEY_CACHE, JSON.stringify({ at: Date.now(), items }));
@@ -216,6 +224,34 @@
     render();
     setStatus('URLと取得結果を削除しました。');
   });
+
+  const applyTheme = (theme) => {
+    document.documentElement.dataset.theme = theme;
+    const dark = theme === 'dark';
+    els.themeBtn.textContent = dark ? '☀️' : '🌙';
+    els.themeBtn.title = dark ? 'ライトモードに切替' : 'ダークモードに切替';
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#242526' : '#ffffff');
+  };
+
+  const applyView = (view) => {
+    const titlesOnly = view === 'titles';
+    document.body.classList.toggle('titles-only', titlesOnly);
+    els.viewBtn.textContent = titlesOnly ? '☰' : '📰';
+    els.viewBtn.title = titlesOnly ? 'タイトル+本文に切替' : 'タイトルのみに切替';
+  };
+
+  els.themeBtn.addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem(KEY_THEME, next);
+    applyTheme(next);
+  });
+  els.viewBtn.addEventListener('click', () => {
+    const next = document.body.classList.contains('titles-only') ? 'full' : 'titles';
+    localStorage.setItem(KEY_VIEW, next);
+    applyView(next);
+  });
+  applyTheme(document.documentElement.dataset.theme || 'light');
+  applyView(localStorage.getItem(KEY_VIEW) === 'titles' ? 'titles' : 'full');
 
   loadCache();
 })();
