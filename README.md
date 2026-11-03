@@ -15,7 +15,7 @@ HTML/CSS/JavaScript のみの静的サイトです。ボタンで Logic Apps を
 - RSS取得（`List all RSS feed items` など）→ 最後に **Response アクション**で JSON を返却
   - Status 200、Body: 配列、または `{ "value": [...] }`
   - 各要素の対応フィールド: `title`, `primaryLink`（または `link`/`url`/`links[]`）, `summary`（HTMLは除去して表示）, `publishDate`（または `updatedOn`）, `source`（任意）
-  - **CORS対応**: Response の Headers に `Access-Control-Allow-Origin: https://<user>.github.io`（オリジンのみ、パスなし）を設定。ワイルドカード `*` は避ける。
+  - **カテゴリ**: 各要素に `category`（`国内メイン` / `IT` / `経済` / `鉄道` / `その他`）を付与。未指定・上記以外は「その他」に分類。`{ "国内メイン": [...], "IT": [...] }` のカテゴリ別オブジェクトでも可。アプリ側ではカテゴリごとの開閉表示（開閉状態は端末に保存）: Response の Headers に `Access-Control-Allow-Origin: https://<user>.github.io`（オリジンのみ、パスなし）を設定。ワイルドカード `*` は避ける。
   - Logic Apps のトリガーはプリフライト（OPTIONS）を処理できないため、本アプリは単純リクエスト（`text/plain` の POST、ボディ `{}`）として呼び出します。トリガーのリクエスト本文スキーマは未設定にしてください。
 
 ## セキュリティ対策

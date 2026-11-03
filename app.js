@@ -5,7 +5,10 @@
   const KEY_CACHE = 'rss.cache';
   const KEY_THEME = 'rss.theme';
   const KEY_VIEW = 'rss.view';
-  const TIMEOUT_MS = 60000;
+  const KEY_OPEN = 'rss.open';
+  const OTHER = 'その他';
+  const CATEGORIES = ['国内メイン', 'IT', '経済', '鉄道', OTHER];
+  const TIMEOUT_MS = 120000;
   const MAX_BYTES = 5 * 1024 * 1024;
   const MAX_ITEMS = 300;
 
@@ -18,7 +21,7 @@
     saveBtn: $('saveBtn'),
     clearBtn: $('clearBtn'),
     status: $('status'),
-    cards: $('cards'),
+    groups: $('groups'),
     filter: $('filter'),
     filterRow: $('filterRow'),
     themeBtn: $('themeBtn'),
@@ -37,6 +40,8 @@
     let u;
     try { u = new URL(value.replace(/\s+/g, '')); } catch { return null; }
     if (u.protocol !== 'https:' || !u.hostname.endsWith('.logic.azure.com')) return null;
+    if (!u.searchParams.has('sig')) return null;
+    if (!u.searchParams.has('api-version')) u.searchParams.set('api-version', '2016-10-01');
     return u;
   };
 
@@ -57,6 +62,12 @@
 
   const str = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v));
 
+  // 定義外・未指定のカテゴリは「その他」に集約
+  const toCategory = (v) => {
+    const s = str(v).trim();
+    return CATEGORIES.includes(s) ? s : OTHER;
+  };
+
   const firstLink = (o) => {
     const candidates = [o.primaryLink, o.link, o.url, o.href];
     if (Array.isArray(o.links)) candidates.push(...o.links);
@@ -70,7 +81,14 @@
   const normalize = (raw) => {
     let list = raw;
     if (!Array.isArray(list) && list && typeof list === 'object') {
-      list = list.value || list.items || list.body || list.entries || list.feeds;
+      // { "国内メイン": [...], "IT": [...] } 形式（カテゴリ別グループ）
+      if (CATEGORIES.some((c) => Array.isArray(list[c]))) {
+        list = CATEGORIES.flatMap((c) =>
+          (Array.isArray(list[c]) ? list[c] : []).map((o) => ({ category: c, ...o }))
+        );
+      } else {
+        list = list.value || list.items || list.body || list.entries || list.feeds;
+      }
     }
     if (!Array.isArray(list)) throw new Error('想定外のJSON形式です（配列が見つかりません）');
     return list
@@ -85,6 +103,7 @@
           link: firstLink(o),
           summary: toPlainText(str(o.summary || o.description || o.content)),
           source: str(o.source || o.feedTitle || o.feed || ''),
+          category: toCategory(o.category || o.genre),
           time: Number.isNaN(t) ? null : t,
         };
       })
@@ -94,47 +113,81 @@
   const fmtDate = (t) =>
     new Date(t).toLocaleString('ja-JP', { dateStyle: 'medium', timeStyle: 'short' });
 
+  const renderCard = (i) => {
+    const li = document.createElement('li');
+    li.className = 'card';
+
+    const h = document.createElement('h2');
+    if (i.link) {
+      const a = document.createElement('a');
+      a.href = i.link;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer nofollow';
+      a.referrerPolicy = 'no-referrer';
+      a.textContent = i.title;
+      h.append(a);
+    } else {
+      h.textContent = i.title;
+    }
+    li.append(h);
+
+    const meta = [i.source, i.time ? fmtDate(i.time) : ''].filter(Boolean).join(' ・ ');
+    if (meta) {
+      const m = document.createElement('div');
+      m.className = 'meta';
+      m.textContent = meta;
+      li.append(m);
+    }
+    if (i.summary) {
+      const p = document.createElement('p');
+      p.className = 'summary';
+      p.textContent = i.summary;
+      li.append(p);
+    }
+    return li;
+  };
+
+  const loadOpenState = () => {
+    try { return JSON.parse(localStorage.getItem(KEY_OPEN) || '{}') || {}; } catch { return {}; }
+  };
+
   const render = () => {
     const q = els.filter.value.trim().toLowerCase();
     const shown = q
       ? items.filter((i) => (i.title + ' ' + i.summary + ' ' + i.source).toLowerCase().includes(q))
       : items;
+    const open = loadOpenState();
 
-    els.cards.replaceChildren(
-      ...shown.map((i) => {
-        const li = document.createElement('li');
-        li.className = 'card';
+    const groups = CATEGORIES.map((cat) => {
+      const list = shown.filter((i) => i.category === cat);
+      if (list.length === 0) return null;
 
-        const h = document.createElement('h2');
-        if (i.link) {
-          const a = document.createElement('a');
-          a.href = i.link;
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer nofollow';
-          a.referrerPolicy = 'no-referrer';
-          a.textContent = i.title;
-          h.append(a);
-        } else {
-          h.textContent = i.title;
-        }
-        li.append(h);
+      const details = document.createElement('details');
+      details.className = 'group';
+      details.open = open[cat] !== false; // 初期状態は開く
+      details.addEventListener('toggle', () => {
+        const state = loadOpenState();
+        state[cat] = details.open;
+        localStorage.setItem(KEY_OPEN, JSON.stringify(state));
+      });
 
-        const meta = [i.source, i.time ? fmtDate(i.time) : ''].filter(Boolean).join(' ・ ');
-        if (meta) {
-          const m = document.createElement('div');
-          m.className = 'meta';
-          m.textContent = meta;
-          li.append(m);
-        }
-        if (i.summary) {
-          const p = document.createElement('p');
-          p.className = 'summary';
-          p.textContent = i.summary;
-          li.append(p);
-        }
-        return li;
-      })
-    );
+      const summary = document.createElement('summary');
+      const name = document.createElement('span');
+      name.textContent = cat;
+      const count = document.createElement('span');
+      count.className = 'count';
+      count.textContent = String(list.length);
+      summary.append(name, count);
+
+      const ul = document.createElement('ul');
+      ul.className = 'cards';
+      ul.append(...list.map(renderCard));
+
+      details.append(summary, ul);
+      return details;
+    }).filter(Boolean);
+
+    els.groups.replaceChildren(...groups);
     els.filterRow.hidden = items.length === 0;
   };
 
@@ -143,7 +196,7 @@
     if (!u) {
       els.settings.hidden = false;
       els.settingsBtn.setAttribute('aria-expanded', 'true');
-      setStatus('Logic Apps のURLを設定してください（https://*.logic.azure.com のみ有効）。', true);
+      setStatus('Logic Apps のURLを設定してください（https://*.logic.azure.com で、?api-version=...&sig=... を含む完全なURL）。', true);
       return;
     }
 
@@ -190,6 +243,7 @@
           link: safeHttpUrl(i.link),
           summary: str(i.summary),
           source: str(i.source),
+          category: toCategory(i.category),
           time: typeof i.time === 'number' ? i.time : null,
         }));
         setStatus(`前回の取得結果を表示中（${fmtDate(c.at)}）`);
@@ -207,7 +261,7 @@
   els.saveBtn.addEventListener('click', () => {
     const u = parseEndpoint(els.endpoint.value);
     if (!u) {
-      setStatus('URLは https://*.logic.azure.com 形式で入力してください。', true);
+      setStatus('URLが不完全です。https://*.logic.azure.com で始まり、?api-version=...&sig=... まで含む完全なURLを貼り付けてください。', true);
       return;
     }
     localStorage.setItem(KEY_URL, u.href);

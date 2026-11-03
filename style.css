@@ -105,7 +105,39 @@ button:disabled { opacity: .6; cursor: progress; }
 body.titles-only .summary { display: none; }
 body.titles-only .cards { gap: 8px; }
 body.titles-only .card { padding: 10px 14px; }
-.cards { padding-bottom: 130px; }
+#groups { padding-bottom: 130px; }
+.group { margin-bottom: 12px; }
+.group > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  font-weight: 600;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+.group > summary::-webkit-details-marker { display: none; }
+.group > summary::before {
+  content: "▶";
+  font-size: .75rem;
+  color: var(--muted);
+  transition: transform .15s;
+}
+.group[open] > summary::before { transform: rotate(90deg); }
+.count {
+  margin-left: auto;
+  min-width: 1.8em;
+  padding: 0 8px;
+  text-align: center;
+  font-size: .8rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
 .summary {
   margin: 0;
   font-size: .9rem;
