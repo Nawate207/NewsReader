@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https://*.logic.azure.com; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>RSS Reader</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>RSS Reader</h1>
+    <div class="actions">
+      <button id="fetchBtn" type="button" class="primary">ニュースを取得</button>
+      <button id="settingsBtn" type="button" aria-expanded="false" aria-controls="settings">設定</button>
+    </div>
+  </header>
+
+  <section id="settings" class="settings" hidden>
+    <label for="endpoint">Logic Apps の HTTP URL（この端末のブラウザにのみ保存されます）</label>
+    <input id="endpoint" type="password" autocomplete="off" spellcheck="false"
+           placeholder="https://prod-xx.japaneast.logic.azure.com:443/workflows/...">
+    <div class="row">
+      <button id="saveBtn" type="button" class="primary">保存</button>
+      <button id="clearBtn" type="button">URLと取得結果を削除</button>
+    </div>
+  </section>
+
+  <main>
+    <p id="status" role="status" aria-live="polite"></p>
+    <div id="filterRow" class="filter" hidden>
+      <input id="filter" type="search" placeholder="キーワードで絞り込み" autocomplete="off">
+    </div>
+    <ul id="cards" class="cards"></ul>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f4f5f7;
+  --fg: #1c1e21;
+  --card: #fff;
+  --muted: #65676b;
+  --accent: #0b6bcb;
+  --border: #dadde1;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #18191a;
+    --fg: #e4e6eb;
+    --card: #242526;
+    --muted: #b0b3b8;
+    --accent: #4599ff;
+    --border: #3e4042;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+  line-height: 1.6;
+}
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+.topbar h1 { margin: 0; font-size: 1.1rem; }
+.actions { display: flex; gap: 8px; }
+button {
+  font: inherit;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--fg);
+  cursor: pointer;
+}
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .6; cursor: progress; }
+.settings, main { max-width: 960px; margin: 0 auto; padding: 12px 16px; }
+.settings label { display: block; font-size: .9rem; color: var(--muted); margin-bottom: 4px; }
+.settings input, .filter input {
+  width: 100%;
+  font: inherit;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--fg);
+}
+.row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+#status { color: var(--muted); min-height: 1.6em; margin: 0 0 8px; }
+#status.error { color: #d93025; }
+.filter { margin-bottom: 12px; }
+.cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.card h2 { margin: 0; font-size: 1rem; line-height: 1.4; }
+.card h2 a { color: var(--accent); text-decoration: none; }
+.card h2 a:hover { text-decoration: underline; }
+.meta { font-size: .8rem; color: var(--muted); }
+.summary {
+  margin: 0;
+  font-size: .9rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
