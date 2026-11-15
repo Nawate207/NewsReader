@@ -7,10 +7,13 @@
   const KEY_VIEW = 'rss.view';
   const KEY_OPEN = 'rss.open';
   const OTHER = 'その他';
-  const CATEGORIES = ['国内メイン', 'IT', '経済', '鉄道', OTHER];
+  const RAIL = '鉄道';
+  const CATEGORIES = ['国内メイン', 'IT', '経済', RAIL, OTHER];
   const TIMEOUT_MS = 120000;
-  const MAX_BYTES = 5 * 1024 * 1024;
-  const MAX_ITEMS = 300;
+  const MAX_BYTES = 20 * 1024 * 1024;
+  const MAX_PER_SOURCE = 20;
+  const MAX_PER_CATEGORY = 300;
+  const MAX_SUMMARY = 400;
 
   const $ = (id) => document.getElementById(id);
   const els = {
@@ -68,6 +71,17 @@
     return CATEGORIES.includes(s) ? s : OTHER;
   };
 
+  // 会社名がそのまま category に入っている場合（JR東日本 など）は「鉄道」に集約し、会社名は配信元として表示する
+  const RAIL_NAME = /^(JR|東京メトロ|東武|西武|京成|京王|小田急|東急|京急|相鉄|近鉄|近畿日本鉄道|南海|京阪|阪急|阪神|名鉄|西鉄)/;
+
+  const resolveCategory = (o) => {
+    const raw = str(o.category || o.genre).trim();
+    const source = str(o.source || o.feedTitle || o.feed).trim();
+    if (CATEGORIES.includes(raw)) return { category: raw, source };
+    if (RAIL_NAME.test(raw)) return { category: RAIL, source: source || raw };
+    return { category: OTHER, source: source || raw };
+  };
+
   const firstLink = (o) => {
     const candidates = [o.primaryLink, o.link, o.url, o.href];
     if (Array.isArray(o.links)) candidates.push(...o.links);
@@ -91,23 +105,39 @@
       }
     }
     if (!Array.isArray(list)) throw new Error('想定外のJSON形式です（配列が見つかりません）');
-    return list
+    const sorted = list
       .flat()
       .filter((o) => o && typeof o === 'object')
-      .slice(0, MAX_ITEMS)
       .map((o) => {
         const dateStr = o.publishDate || o.publishedAt || o.pubDate || o.updatedOn || o.date || '';
         const t = Date.parse(dateStr);
+        const { category, source } = resolveCategory(o);
         return {
           title: str(o.title).trim() || '(無題)',
           link: firstLink(o),
-          summary: toPlainText(str(o.summary || o.description || o.content)),
-          source: str(o.source || o.feedTitle || o.feed || ''),
-          category: toCategory(o.category || o.genre),
+          summary: toPlainText(str(o.summary || o.description || o.content)).slice(0, MAX_SUMMARY),
+          source,
+          category,
           time: Number.isNaN(t) ? null : t,
         };
       })
       .sort((a, b) => (b.time ?? 0) - (a.time ?? 0));
+
+    // 重複排除と、配信元ごと・カテゴリごとの件数上限（古い記事から切り捨て）
+    const seen = new Set();
+    const perSource = new Map();
+    const perCategory = new Map();
+    return sorted.filter((i) => {
+      const key = `${i.category}|${i.link || i.title}`;
+      if (seen.has(key)) return false;
+      const sk = `${i.category}|${i.source}`;
+      if (i.source && (perSource.get(sk) || 0) >= MAX_PER_SOURCE) return false;
+      if ((perCategory.get(i.category) || 0) >= MAX_PER_CATEGORY) return false;
+      seen.add(key);
+      perSource.set(sk, (perSource.get(sk) || 0) + 1);
+      perCategory.set(i.category, (perCategory.get(i.category) || 0) + 1);
+      return true;
+    });
   };
 
   const fmtDate = (t) =>
@@ -151,40 +181,76 @@
     try { return JSON.parse(localStorage.getItem(KEY_OPEN) || '{}') || {}; } catch { return {}; }
   };
 
+  const makeGroup = ({ key, label, count, className, defaultOpen, forceOpen, content }) => {
+    const open = loadOpenState();
+    const details = document.createElement('details');
+    details.className = className;
+    details.open = forceOpen || (key in open ? open[key] === true : defaultOpen);
+    details.addEventListener('toggle', () => {
+      if (forceOpen) return; // 絞り込み中の自動展開は保存しない
+      const state = loadOpenState();
+      state[key] = details.open;
+      localStorage.setItem(KEY_OPEN, JSON.stringify(state));
+    });
+
+    const summary = document.createElement('summary');
+    const name = document.createElement('span');
+    name.textContent = label;
+    const badge = document.createElement('span');
+    badge.className = 'count';
+    badge.textContent = String(count);
+    summary.append(name, badge);
+
+    details.append(summary, content);
+    return details;
+  };
+
+  const cardList = (list) => {
+    const ul = document.createElement('ul');
+    ul.className = 'cards';
+    ul.append(...list.map(renderCard));
+    return ul;
+  };
+
   const render = () => {
     const q = els.filter.value.trim().toLowerCase();
     const shown = q
       ? items.filter((i) => (i.title + ' ' + i.summary + ' ' + i.source).toLowerCase().includes(q))
       : items;
-    const open = loadOpenState();
 
     const groups = CATEGORIES.map((cat) => {
       const list = shown.filter((i) => i.category === cat);
       if (list.length === 0) return null;
 
-      const details = document.createElement('details');
-      details.className = 'group';
-      details.open = open[cat] !== false; // 初期状態は開く
-      details.addEventListener('toggle', () => {
-        const state = loadOpenState();
-        state[cat] = details.open;
-        localStorage.setItem(KEY_OPEN, JSON.stringify(state));
-      });
+      let content;
+      if (cat === RAIL) {
+        // 鉄道は会社（source）ごとの入れ子グループ。会社は初期状態で閉じる
+        const bySource = new Map();
+        list.forEach((i) => {
+          const s = i.source || OTHER;
+          if (!bySource.has(s)) bySource.set(s, []);
+          bySource.get(s).push(i);
+        });
+        content = document.createElement('div');
+        content.className = 'subgroups';
+        content.append(
+          ...[...bySource].map(([s, arr]) =>
+            makeGroup({
+              key: `${RAIL}/${s}`,
+              label: s,
+              count: arr.length,
+              className: 'group sub',
+              defaultOpen: false,
+              forceOpen: Boolean(q),
+              content: cardList(arr),
+            })
+          )
+        );
+      } else {
+        content = cardList(list);
+      }
 
-      const summary = document.createElement('summary');
-      const name = document.createElement('span');
-      name.textContent = cat;
-      const count = document.createElement('span');
-      count.className = 'count';
-      count.textContent = String(list.length);
-      summary.append(name, count);
-
-      const ul = document.createElement('ul');
-      ul.className = 'cards';
-      ul.append(...list.map(renderCard));
-
-      details.append(summary, ul);
-      return details;
+      return makeGroup({ key: cat, label: cat, count: list.length, className: 'group', defaultOpen: true, content });
     }).filter(Boolean);
 
     els.groups.replaceChildren(...groups);
@@ -222,7 +288,9 @@
       }
       if (text.length > MAX_BYTES) throw new Error('レスポンスが大きすぎます');
       items = normalize(JSON.parse(text));
-      localStorage.setItem(KEY_CACHE, JSON.stringify({ at: Date.now(), items }));
+      try {
+        localStorage.setItem(KEY_CACHE, JSON.stringify({ at: Date.now(), items }));
+      } catch { /* 容量超過時はキャッシュを諦める（表示は継続） */ }
       setStatus(`${items.length} 件取得（${fmtDate(Date.now())}）`);
       render();
     } catch (e) {
