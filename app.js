@@ -10,9 +10,10 @@
   const RAIL = '鉄道';
   const CATEGORIES = ['国内メイン', 'IT', '経済', RAIL, OTHER];
   const TIMEOUT_MS = 120000;
+  const FETCH_LABEL = 'ニュースを取得';
   const MAX_BYTES = 20 * 1024 * 1024;
   const MAX_PER_SOURCE = 20;
-  const MAX_PER_CATEGORY = 300;
+  const MAX_PER_CATEGORY = 1000;
   const MAX_SUMMARY = 400;
 
   const $ = (id) => document.getElementById(id);
@@ -74,11 +75,36 @@
   // 会社名がそのまま category に入っている場合（JR東日本 など）は「鉄道」に集約し、会社名は配信元として表示する
   const RAIL_NAME = /^(JR|東京メトロ|東武|西武|京成|京王|小田急|東急|京急|相鉄|近鉄|近畿日本鉄道|南海|京阪|阪急|阪神|名鉄|西鉄)/;
 
+  // 鉄道会社の地域分類（表示名は Logic Apps の name と一致させる）。JR は単独階層
+  const RAIL_REGIONS = [
+    ['総合', ['鉄道（総合）']],
+    ['JR', ['JR北海道', 'JR東日本', 'JR東海', 'JR西日本', 'JR四国', 'JR九州', 'JR貨物']],
+    ['北海道・東北', ['札幌市交通局', '仙台市交通局']],
+    ['関東', ['東京メトロ', '東京都交通局', '東武鉄道', '西武鉄道', '京成電鉄', '京王電鉄', '小田急電鉄', '東急', '京急電鉄', '相鉄グループ',
+      '横浜市交通局', '江ノ島電鉄', 'つくばエクスプレス', '北総鉄道']],
+    ['中部', ['名古屋鉄道', '遠州鉄道', '富士急行']],
+    ['関西', ['近畿日本鉄道', '南海電鉄', '京阪電鉄', '阪急電鉄', '阪神電鉄', 'Osaka Metro', '京都市交通局', '山陽電気鉄道', '大阪モノレール']],
+    ['中国・四国', ['広島電鉄', '伊予鉄道']],
+    ['九州・沖縄', ['西日本鉄道']],
+    [OTHER, []],
+  ];
+  const RAIL_REGION_OF = new Map(RAIL_REGIONS.flatMap(([r, names]) => names.map((n) => [n, r])));
+  const regionOf = (company) => RAIL_REGION_OF.get(company) || (/^JR/.test(company) ? 'JR' : OTHER);
+  const isRail = (name) => RAIL_REGION_OF.has(name) || RAIL_NAME.test(name);
+
+  // 「IT（Yahoo）」のように括弧付きで届いた IT 系は、IT 大分類の配下にメディア別グループとして表示する
+  const IT = 'IT';
+  const IT_SUB = /^IT\s*[（(]\s*(.+?)\s*[）)]$/;
+  const IT_ORDER = ['yahoo', '窓の杜', 'itmedia'];
+  const normKey = (s) => s.replace(/\s+/g, '').toLowerCase();
+
   const resolveCategory = (o) => {
     const raw = str(o.category || o.genre).trim();
     const source = str(o.source || o.feedTitle || o.feed).trim();
+    const itSub = raw.match(IT_SUB);
+    if (itSub) return { category: IT, source: itSub[1] };
     if (CATEGORIES.includes(raw)) return { category: raw, source };
-    if (RAIL_NAME.test(raw)) return { category: RAIL, source: source || raw };
+    if (isRail(raw)) return { category: RAIL, source: source || raw };
     return { category: OTHER, source: source || raw };
   };
 
@@ -212,6 +238,90 @@
     return ul;
   };
 
+  // 鉄道: 地域（JR / 関東 / 関西 …）→ 会社 の 2 階層。地域は初期状態で開き、会社は閉じる
+  const renderRail = (list, filtering) => {
+    const regions = new Map(RAIL_REGIONS.map(([r]) => [r, new Map()]));
+    list.forEach((i) => {
+      const company = i.source || OTHER;
+      const region = regionOf(company);
+      const companies = regions.get(region);
+      if (!companies.has(company)) companies.set(company, []);
+      companies.get(company).push(i);
+    });
+
+    const wrap = document.createElement('div');
+    wrap.className = 'subgroups';
+    for (const [region, companies] of regions) {
+      if (companies.size === 0) continue;
+      const order = (RAIL_REGIONS.find(([r]) => r === region) || [, []])[1];
+      const sorted = [...companies].sort((a, b) => {
+        const ia = order.indexOf(a[0]);
+        const ib = order.indexOf(b[0]);
+        return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+      });
+
+      const inner = document.createElement('div');
+      inner.className = 'subgroups';
+      inner.append(
+        ...sorted.map(([company, arr]) =>
+          makeGroup({
+            key: `${RAIL}/${region}/${company}`,
+            label: company,
+            count: arr.length,
+            className: 'group sub',
+            defaultOpen: false,
+            forceOpen: filtering,
+            content: cardList(arr),
+          })
+        )
+      );
+      wrap.append(
+        makeGroup({
+          key: `${RAIL}/${region}`,
+          label: region,
+          count: sorted.reduce((n, [, arr]) => n + arr.length, 0),
+          className: 'group sub region',
+          defaultOpen: true,
+          forceOpen: filtering,
+          content: inner,
+        })
+      );
+    }
+    return wrap;
+  };
+
+  const renderIt = (list, filtering) => {
+    const bySource = new Map();
+    list.forEach((i) => {
+      const s = i.source || '';
+      if (!bySource.has(s)) bySource.set(s, []);
+      bySource.get(s).push(i);
+    });
+    const rank = (s) => {
+      const idx = IT_ORDER.indexOf(normKey(s));
+      return idx < 0 ? 999 : idx;
+    };
+
+    const wrap = document.createElement('div');
+    wrap.className = 'subgroups';
+    wrap.append(
+      ...[...bySource]
+        .sort((a, b) => rank(a[0]) - rank(b[0]))
+        .map(([s, arr]) =>
+          makeGroup({
+            key: `${IT}/${s}`,
+            label: s ? `${IT}（${s}）` : IT,
+            count: arr.length,
+            className: 'group sub',
+            defaultOpen: true,
+            forceOpen: filtering,
+            content: cardList(arr),
+          })
+        )
+    );
+    return wrap;
+  };
+
   const render = () => {
     const q = els.filter.value.trim().toLowerCase();
     const shown = q
@@ -224,28 +334,9 @@
 
       let content;
       if (cat === RAIL) {
-        // 鉄道は会社（source）ごとの入れ子グループ。会社は初期状態で閉じる
-        const bySource = new Map();
-        list.forEach((i) => {
-          const s = i.source || OTHER;
-          if (!bySource.has(s)) bySource.set(s, []);
-          bySource.get(s).push(i);
-        });
-        content = document.createElement('div');
-        content.className = 'subgroups';
-        content.append(
-          ...[...bySource].map(([s, arr]) =>
-            makeGroup({
-              key: `${RAIL}/${s}`,
-              label: s,
-              count: arr.length,
-              className: 'group sub',
-              defaultOpen: false,
-              forceOpen: Boolean(q),
-              content: cardList(arr),
-            })
-          )
-        );
+        content = renderRail(list, Boolean(q));
+      } else if (cat === IT) {
+        content = renderIt(list, Boolean(q));
       } else {
         content = cardList(list);
       }
@@ -267,9 +358,23 @@
     }
 
     els.fetchBtn.disabled = true;
-    setStatus('取得中…（Logic Apps の実行に時間がかかる場合があります）');
+    const startedAt = performance.now();
+    let lastSec = -1;
+    let phase = '取得中';
+    const tick = () => {
+      const sec = (performance.now() - startedAt) / 1000;
+      els.fetchBtn.textContent = `${phase}… ${sec.toFixed(1)}秒`;
+      if (Math.floor(sec) !== lastSec) { // 読み上げ対象のステータスは1秒ごとに更新
+        lastSec = Math.floor(sec);
+        setStatus(`${phase}…（経過 ${lastSec}秒 / 最大 ${TIMEOUT_MS / 1000}秒。Logic Apps の実行に時間がかかる場合があります）`);
+      }
+    };
+    tick();
+    const ticker = setInterval(tick, 100);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    let result = '';
+    let isError = false;
     try {
       // text/plain の単純リクエスト（プリフライト不要）。空ボディだと Safari で 400 になる場合があるため '{}' を送る
       const res = await fetch(u.href, {
@@ -281,24 +386,30 @@
         body: '{}',
         signal: ctrl.signal,
       });
+      phase = '受信中';
       const text = await res.text();
       if (!res.ok) {
         const detail = text.replace(/\s+/g, ' ').slice(0, 200);
         throw new Error(`HTTP ${res.status}${detail ? ' - ' + detail : ''}`);
       }
       if (text.length > MAX_BYTES) throw new Error('レスポンスが大きすぎます');
+      phase = '解析中';
       items = normalize(JSON.parse(text));
       try {
         localStorage.setItem(KEY_CACHE, JSON.stringify({ at: Date.now(), items }));
       } catch { /* 容量超過時はキャッシュを諦める（表示は継続） */ }
-      setStatus(`${items.length} 件取得（${fmtDate(Date.now())}）`);
+      result = `${items.length} 件取得（${fmtDate(Date.now())}・所要 ${((performance.now() - startedAt) / 1000).toFixed(1)}秒）`;
       render();
     } catch (e) {
       const msg = e.name === 'AbortError' ? 'タイムアウトしました' : e.message;
-      setStatus(`取得に失敗しました: ${msg}`, true);
+      result = `取得に失敗しました（${((performance.now() - startedAt) / 1000).toFixed(1)}秒）: ${msg}`;
+      isError = true;
     } finally {
+      clearInterval(ticker);
       clearTimeout(timer);
+      els.fetchBtn.textContent = FETCH_LABEL;
       els.fetchBtn.disabled = false;
+      setStatus(result, isError);
     }
   };
 

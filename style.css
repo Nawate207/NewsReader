@@ -130,6 +130,7 @@ body.titles-only .card { padding: 10px 14px; }
 .group[open] > summary::before { transform: rotate(90deg); }
 .subgroups { margin-left: 12px; padding-left: 10px; border-left: 2px solid var(--border); }
 .group.sub { margin-bottom: 8px; }
+.group.region > summary { font-weight: 600; }
 .group.sub > summary { font-weight: 500; padding: 8px 12px; margin-bottom: 8px; }
 .count {
   margin-left: auto;
