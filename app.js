@@ -6,6 +6,9 @@
   const KEY_THEME = 'rss.theme';
   const KEY_VIEW = 'rss.view';
   const KEY_OPEN = 'rss.open';
+  const KEY_KNOWN = 'rss.known';
+  const KEY_UNREAD = 'rss.unread';
+  const MAX_KNOWN = 5000;
   const OTHER = 'その他';
   const RAIL = '鉄道';
   const CATEGORIES = ['国内メイン', 'IT', '経済', RAIL, OTHER];
@@ -28,6 +31,7 @@
     groups: $('groups'),
     filter: $('filter'),
     filterRow: $('filterRow'),
+    readAllBtn: $('readAllBtn'),
     themeBtn: $('themeBtn'),
     viewBtn: $('viewBtn'),
   };
@@ -147,6 +151,7 @@
           time: Number.isNaN(t) ? null : t,
         };
       })
+      .map((i) => ({ ...i, key: itemKey(i) }))
       .sort((a, b) => (b.time ?? 0) - (a.time ?? 0));
 
     // 重複排除と、配信元ごと・カテゴリごとの件数上限（古い記事から切り捨て）
@@ -169,11 +174,86 @@
   const fmtDate = (t) =>
     new Date(t).toLocaleString('ja-JP', { dateStyle: 'medium', timeStyle: 'short' });
 
+  // ---- 新着（New）/既読管理 ----
+  // 記事キー: リンク（なければタイトル）の 53bit ハッシュ（localStorage の容量節約）
+  const hash53 = (s) => {
+    let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (let k = 0; k < s.length; k++) {
+      const c = s.charCodeAt(k);
+      h1 = Math.imul(h1 ^ c, 2654435761);
+      h2 = Math.imul(h2 ^ c, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+  };
+  function itemKey(i) { return hash53(i.link || i.title); }
+
+  const loadList = (k) => {
+    try {
+      const v = JSON.parse(localStorage.getItem(k) || 'null');
+      return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : null;
+    } catch { return null; }
+  };
+  const saveList = (k, arr) => {
+    try { localStorage.setItem(k, JSON.stringify(arr)); } catch { /* 容量超過は無視 */ }
+  };
+  const unread = new Set(loadList(KEY_UNREAD) || []);
+
+  // 取得結果のうち、前回までに見ていない記事を「未読(New)」として記録する。
+  // 初回取得（比較対象なし）は基準として記録するだけで New にしない。
+  const markNew = (list) => {
+    const known = loadList(KEY_KNOWN);
+    const keys = list.map((i) => i.key);
+    let added = 0;
+    if (known) {
+      const knownSet = new Set(known);
+      keys.forEach((k) => {
+        if (!knownSet.has(k)) { unread.add(k); added++; }
+      });
+    }
+    const current = new Set(keys);
+    [...unread].forEach((k) => { if (!current.has(k)) unread.delete(k); });
+    const merged = [...(known || []).filter((k) => !current.has(k)), ...keys].slice(-MAX_KNOWN);
+    saveList(KEY_KNOWN, merged);
+    saveList(KEY_UNREAD, [...unread]);
+    return added;
+  };
+
+  const updateNewBadges = () => {
+    els.groups.querySelectorAll('details').forEach((d) => {
+      const n = d.querySelectorAll('.card.is-new').length;
+      const b = d.querySelector(':scope > summary > .new-label');
+      b.hidden = n === 0;
+      b.textContent = `New ${n}`;
+    });
+    els.readAllBtn.hidden = unread.size === 0;
+  };
+
+  const markRead = (key) => {
+    if (!unread.delete(key)) return;
+    saveList(KEY_UNREAD, [...unread]);
+    els.groups.querySelectorAll('.card.is-new').forEach((c) => {
+      if (c.dataset.key !== key) return;
+      c.classList.remove('is-new');
+      c.querySelector('.new-label')?.remove();
+    });
+    updateNewBadges();
+  };
+
   const renderCard = (i) => {
     const li = document.createElement('li');
     li.className = 'card';
+    li.dataset.key = i.key;
 
     const h = document.createElement('h2');
+    if (unread.has(i.key)) {
+      li.classList.add('is-new');
+      const nl = document.createElement('span');
+      nl.className = 'new-label';
+      nl.textContent = 'New';
+      h.append(nl);
+    }
     if (i.link) {
       const a = document.createElement('a');
       a.href = i.link;
@@ -183,7 +263,7 @@
       a.textContent = i.title;
       h.append(a);
     } else {
-      h.textContent = i.title;
+      h.append(i.title);
     }
     li.append(h);
 
@@ -222,10 +302,13 @@
     const summary = document.createElement('summary');
     const name = document.createElement('span');
     name.textContent = label;
+    const newBadge = document.createElement('span');
+    newBadge.className = 'new-label';
+    newBadge.hidden = true;
     const badge = document.createElement('span');
     badge.className = 'count';
     badge.textContent = String(count);
-    summary.append(name, badge);
+    summary.append(name, newBadge, badge);
 
     details.append(summary, content);
     return details;
@@ -345,6 +428,7 @@
     }).filter(Boolean);
 
     els.groups.replaceChildren(...groups);
+    updateNewBadges();
     els.filterRow.hidden = items.length === 0;
   };
 
@@ -395,10 +479,11 @@
       if (text.length > MAX_BYTES) throw new Error('レスポンスが大きすぎます');
       phase = '解析中';
       items = normalize(JSON.parse(text));
+      const added = markNew(items);
       try {
         localStorage.setItem(KEY_CACHE, JSON.stringify({ at: Date.now(), items }));
       } catch { /* 容量超過時はキャッシュを諦める（表示は継続） */ }
-      result = `${items.length} 件取得（${fmtDate(Date.now())}・所要 ${((performance.now() - startedAt) / 1000).toFixed(1)}秒）`;
+      result = `${items.length} 件取得・新着 ${added} 件（${fmtDate(Date.now())}・所要 ${((performance.now() - startedAt) / 1000).toFixed(1)}秒）`;
       render();
     } catch (e) {
       const msg = e.name === 'AbortError' ? 'タイムアウトしました' : e.message;
@@ -417,14 +502,19 @@
     try {
       const c = JSON.parse(localStorage.getItem(KEY_CACHE) || 'null');
       if (c && Array.isArray(c.items)) {
-        items = c.items.map((i) => ({
-          title: str(i.title),
-          link: safeHttpUrl(i.link),
-          summary: str(i.summary),
-          source: str(i.source),
-          category: toCategory(i.category),
-          time: typeof i.time === 'number' ? i.time : null,
-        }));
+        items = c.items.map((i) => {
+          const link = safeHttpUrl(i.link);
+          const title = str(i.title);
+          return {
+            title,
+            link,
+            summary: str(i.summary),
+            source: str(i.source),
+            category: toCategory(i.category),
+            time: typeof i.time === 'number' ? i.time : null,
+            key: itemKey({ link, title }),
+          };
+        });
         setStatus(`前回の取得結果を表示中（${fmtDate(c.at)}）`);
         render();
       }
@@ -432,6 +522,22 @@
   };
 
   els.fetchBtn.addEventListener('click', fetchNews);
+  // リンクを開いたカードを既読にする（通常クリック・中クリック・長押しメニューは対象外）
+  const onLinkOpen = (e) => {
+    const a = e.target.closest?.('.card a');
+    if (a) markRead(a.closest('.card').dataset.key);
+  };
+  els.groups.addEventListener('click', onLinkOpen);
+  els.groups.addEventListener('auxclick', onLinkOpen);
+  els.readAllBtn.addEventListener('click', () => {
+    unread.clear();
+    saveList(KEY_UNREAD, []);
+    els.groups.querySelectorAll('.card.is-new').forEach((c) => {
+      c.classList.remove('is-new');
+      c.querySelector('.new-label')?.remove();
+    });
+    updateNewBadges();
+  });
   els.filter.addEventListener('input', render);
   els.settingsBtn.addEventListener('click', () => {
     els.settings.hidden = !els.settings.hidden;
@@ -452,6 +558,9 @@
   els.clearBtn.addEventListener('click', () => {
     localStorage.removeItem(KEY_URL);
     localStorage.removeItem(KEY_CACHE);
+    localStorage.removeItem(KEY_KNOWN);
+    localStorage.removeItem(KEY_UNREAD);
+    unread.clear();
     els.endpoint.value = '';
     items = [];
     render();

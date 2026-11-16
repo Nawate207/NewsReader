@@ -63,7 +63,25 @@ button:disabled { opacity: .6; cursor: progress; }
 .row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 #status { color: var(--muted); min-height: 1.6em; margin: 0 0 8px; }
 #status.error { color: #d93025; }
-.filter { margin-bottom: 12px; }
+.filter { margin-bottom: 12px; display: flex; gap: 8px; }
+.filter input { flex: 1; min-width: 0; }
+.filter button { white-space: nowrap; }
+.filter button[hidden] { display: none; }
+.new-label {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 7px;
+  font-size: .7rem;
+  font-weight: 700;
+  line-height: 1.6;
+  color: #fff;
+  background: #e53935;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.new-label[hidden] { display: none; }
+.group > summary .new-label { margin: 0; }
+.card.is-new { border-left: 4px solid #e53935; }
 .cards {
   list-style: none;
   margin: 0;
