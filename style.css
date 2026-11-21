@@ -37,7 +37,20 @@ body {
   border-bottom: 1px solid var(--border);
 }
 .topbar h1 { margin: 0; font-size: 1.1rem; }
-.actions { display: flex; gap: 8px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.nav-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--fg);
+  text-decoration: none;
+}
+@media (max-width: 500px) {
+  .topbar { flex-wrap: wrap; }
+}
 button {
   font: inherit;
   padding: 8px 14px;
@@ -91,6 +104,7 @@ button:disabled { opacity: .6; cursor: progress; }
   gap: 12px;
 }
 .card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -99,10 +113,24 @@ button:disabled { opacity: .6; cursor: progress; }
   border: 1px solid var(--border);
   border-radius: 12px;
 }
-.card h2 { margin: 0; font-size: 1rem; line-height: 1.4; }
+.card h2 { margin: 0; font-size: 1rem; line-height: 1.4; padding-right: 36px; }
 .card h2 a { color: var(--accent); text-decoration: none; }
 .card h2 a:hover { text-decoration: underline; }
 .meta { font-size: .8rem; color: var(--muted); }
+.bm-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.3rem;
+  line-height: 1;
+}
+.bm-btn.on { color: #f5a623; }
 .fab-group {
   position: fixed;
   right: calc(16px + env(safe-area-inset-right));

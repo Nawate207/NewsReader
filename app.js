@@ -241,10 +241,37 @@
     updateNewBadges();
   };
 
+  // ---- ブックマーク（☆/★）----
+  let bmIds = Bookmarks.ids();
+  const setBm = (btn, on) => {
+    btn.textContent = on ? '★' : '☆';
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', String(on));
+    btn.title = on ? 'ブックマークを解除' : 'ブックマークに追加';
+    btn.setAttribute('aria-label', btn.title);
+  };
+  const makeBmButton = (id) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'bm-btn';
+    b.dataset.id = id;
+    setBm(b, bmIds.has(id));
+    return b;
+  };
+  const rssEntry = (i) => ({
+    id: `rss:${i.key}`, type: 'rss', title: i.title, url: i.link, summary: i.summary,
+    source: i.source, category: i.category, time: i.time,
+  });
+  Bookmarks.onChange(() => {
+    bmIds = Bookmarks.ids();
+    document.querySelectorAll('.bm-btn').forEach((b) => setBm(b, bmIds.has(b.dataset.id)));
+  });
+
   const renderCard = (i) => {
     const li = document.createElement('li');
     li.className = 'card';
     li.dataset.key = i.key;
+    li.append(makeBmButton(`rss:${i.key}`));
 
     const h = document.createElement('h2');
     if (unread.has(i.key)) {
@@ -406,6 +433,7 @@
   };
 
   const render = () => {
+    bmIds = Bookmarks.ids();
     const q = els.filter.value.trim().toLowerCase();
     const shown = q
       ? items.filter((i) => (i.title + ' ' + i.summary + ' ' + i.source).toLowerCase().includes(q))
@@ -529,6 +557,21 @@
   };
   els.groups.addEventListener('click', onLinkOpen);
   els.groups.addEventListener('auxclick', onLinkOpen);
+  els.groups.addEventListener('click', (e) => {
+    const btn = e.target.closest?.('.bm-btn');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    let result;
+    if (bmIds.has(id)) {
+      const saved = Bookmarks.list().find((x) => x.id === id);
+      if (saved && (saved.memo || saved.tags.length) && !confirm('メモ・タグも削除されます。ブックマークを解除しますか？')) return;
+      result = Bookmarks.remove(id);
+    } else {
+      const item = items.find((x) => `rss:${x.key}` === id);
+      result = item ? Bookmarks.add(rssEntry(item)) : { ok: false, error: '記事が見つかりません。' };
+    }
+    if (!result.ok) setStatus(result.error, true);
+  });
   els.readAllBtn.addEventListener('click', () => {
     unread.clear();
     saveList(KEY_UNREAD, []);
